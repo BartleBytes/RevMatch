@@ -1,4 +1,3 @@
-
 # ========================================================
 # RevMatch Motorcycle Space Explorer
 # Purpose: Interactive 3D motorcycle embedding space +
@@ -85,23 +84,33 @@ ui <- page_navbar(
         ),
         
         sliderInput(
-          "desired_hp",
-          "Desired horsepower",
+          "desired_hp_range",
+          "Desired horsepower range",
           min = 20,
           max = 180,
-          value = 75,
+          value = c(55, 100),
           step = 5,
           post = " hp"
         ),
         
         sliderInput(
-          "desired_weight",
-          "Desired weight",
+          "desired_weight_range",
+          "Desired weight range",
           min = 250,
           max = 700,
-          value = 430,
+          value = c(250, 550),
           step = 10,
           post = " lbs"
+        ),
+        
+        sliderInput(
+          "desired_fuel_range",
+          "Desired fuel capacity range",
+          min = 1,
+          max = 8,
+          value = c(3, 6),
+          step = 0.25,
+          post = " gal"
         ),
         
         sliderInput(
@@ -129,6 +138,9 @@ ui <- page_navbar(
           choices = c(
             "Category" = "category_group",
             "Cluster" = "cluster_label",
+            "Horsepower" = "horsepower",
+            "Weight" = "weight_lbs",
+            "Fuel capacity" = "fuel_capacity_gal",
             "Beginner score" = "beginner_score",
             "Performance score" = "performance_score",
             "Touring score" = "touring_score",
@@ -233,17 +245,27 @@ server <- function(input, output, session) {
     space %>%
       filter(
         Year >= input$year_min,
-        category_group %in% input$categories
+        category_group %in% input$categories,
+        horsepower >= input$desired_hp_range[1],
+        horsepower <= input$desired_hp_range[2],
+        weight_lbs >= input$desired_weight_range[1],
+        weight_lbs <= input$desired_weight_range[2],
+        fuel_capacity_gal >= input$desired_fuel_range[1],
+        fuel_capacity_gal <= input$desired_fuel_range[2]
       )
   })
   
   user_vec <- reactive({
-    build_user_vector(
+    build_space_user_vector(
       experience = input$experience,
       rider_height = input$rider_height,
       use_case = input$use_case,
-      desired_hp = input$desired_hp,
-      desired_weight = input$desired_weight
+      desired_hp_min = input$desired_hp_range[1],
+      desired_hp_max = input$desired_hp_range[2],
+      desired_weight_min = input$desired_weight_range[1],
+      desired_weight_max = input$desired_weight_range[2],
+      desired_fuel_min = input$desired_fuel_range[1],
+      desired_fuel_max = input$desired_fuel_range[2]
     )
   })
   
@@ -289,6 +311,15 @@ server <- function(input, output, session) {
     df <- filtered_space()
     recs <- recommendations()
     
+    if (nrow(df) == 0) {
+      return(
+        plot_ly() %>%
+          layout(
+            title = "No motorcycles match the selected filters. Try widening your ranges."
+          )
+      )
+    }
+    
     color_col <- input$color_by
     
     p <- plot_ly(
@@ -311,32 +342,40 @@ server <- function(input, output, session) {
         "Category: ", category_group, "<br>",
         "HP: ", round(horsepower, 0), "<br>",
         "Weight: ", round(weight_lbs, 0), " lbs<br>",
+        "Fuel: ", round(fuel_capacity_gal, 1), " gal<br>",
         "Seat height: ", round(seat_height_in, 1), " in<br>",
         "Cluster: ", cluster_label
       ),
-      hoverinfo = "text"
-    ) %>%
-      add_trace(
-        data = recs,
-        x = ~Embed1,
-        y = ~Embed2,
-        z = ~Embed3,
-        type = "scatter3d",
-        mode = "markers",
-        marker = list(
-          size = 8,
-          symbol = "diamond",
-          opacity = 0.95
-        ),
-        text = ~paste0(
-          "<b>Recommended: ", Brand, " ", Model, "</b><br>",
-          "Similarity: ", percent(cosine_similarity, accuracy = 0.1), "<br>",
-          "Fit score: ", round(fit_score, 1)
-        ),
-        hoverinfo = "text",
-        inherit = FALSE,
-        name = "Your nearest bikes"
-      ) %>%
+      hoverinfo = "text",
+      name = "Motorcycle space"
+    )
+    
+    if (nrow(recs) > 0) {
+      p <- p %>%
+        add_trace(
+          data = recs,
+          x = ~Embed1,
+          y = ~Embed2,
+          z = ~Embed3,
+          type = "scatter3d",
+          mode = "markers",
+          marker = list(
+            size = 8,
+            symbol = "diamond",
+            opacity = 0.95
+          ),
+          text = ~paste0(
+            "<b>Recommended: ", Brand, " ", Model, "</b><br>",
+            "Similarity: ", percent(cosine_similarity, accuracy = 0.1), "<br>",
+            "Fit score: ", round(fit_score, 1)
+          ),
+          hoverinfo = "text",
+          inherit = FALSE,
+          name = "Your nearest bikes"
+        )
+    }
+    
+    p %>%
       layout(
         scene = list(
           xaxis = list(title = "Design axis 1"),
@@ -346,8 +385,6 @@ server <- function(input, output, session) {
         legend = list(orientation = "h"),
         margin = list(l = 0, r = 0, b = 0, t = 0)
       )
-    
-    p
   })
   
   output$profile_card <- renderUI({
@@ -356,15 +393,27 @@ server <- function(input, output, session) {
       tags$p("Your profile is converted into a synthetic motorcycle vector, then compared to every real bike using cosine similarity."),
       tags$ul(
         tags$li(paste("Height:", input$rider_height, "in")),
-        tags$li(paste("Desired horsepower:", input$desired_hp, "hp")),
-        tags$li(paste("Desired weight:", input$desired_weight, "lbs")),
+        tags$li(paste("Horsepower range:", input$desired_hp_range[1], "-", input$desired_hp_range[2], "hp")),
+        tags$li(paste("Weight range:", input$desired_weight_range[1], "-", input$desired_weight_range[2], "lbs")),
+        tags$li(paste("Fuel range:", input$desired_fuel_range[1], "-", input$desired_fuel_range[2], "gal")),
         tags$li(paste("Primary use case:", input$use_case))
       )
     )
   })
   
   output$recommendation_table <- renderDT({
-    recommendations() %>%
+    recs <- recommendations()
+    
+    if (nrow(recs) == 0) {
+      return(
+        datatable(
+          tibble(Message = "No motorcycles match those filters. Try widening your horsepower, weight, fuel, year, or category selections."),
+          rownames = FALSE
+        )
+      )
+    }
+    
+    recs %>%
       transmute(
         Rank = row_number(),
         Motorcycle = paste(Year, Brand, Model),
@@ -373,6 +422,7 @@ server <- function(input, output, session) {
         `Fit score` = round(fit_score, 1),
         HP = round(horsepower, 0),
         Weight = round(weight_lbs, 0),
+        Fuel = round(fuel_capacity_gal, 1),
         `Seat height` = round(seat_height_in, 1),
         `Why it fits` = explanation
       ) %>%
@@ -397,8 +447,8 @@ server <- function(input, output, session) {
         tags$li(paste("Horsepower:", round(bike$horsepower, 0))),
         tags$li(paste("Torque:", round(bike$torque_nm, 0), "Nm")),
         tags$li(paste("Weight:", round(bike$weight_lbs, 0), "lbs")),
-        tags$li(paste("Seat height:", round(bike$seat_height_in, 1), "in")),
-        tags$li(paste("Fuel capacity:", round(bike$fuel_capacity_gal, 1), "gal"))
+        tags$li(paste("Fuel capacity:", round(bike$fuel_capacity_gal, 1), "gal")),
+        tags$li(paste("Seat height:", round(bike$seat_height_in, 1), "in"))
       )
     )
   })
@@ -415,9 +465,10 @@ server <- function(input, output, session) {
         Rank = row_number(),
         Motorcycle = paste(Year, Brand, Model),
         Category = category_group,
-        `Similarity` = percent(cosine_similarity, accuracy = 0.1),
+        Similarity = percent(cosine_similarity, accuracy = 0.1),
         HP = round(horsepower, 0),
         Weight = round(weight_lbs, 0),
+        Fuel = round(fuel_capacity_gal, 1),
         `Seat height` = round(seat_height_in, 1),
         `Design archetype` = cluster_label
       ) %>%
@@ -429,6 +480,13 @@ server <- function(input, output, session) {
   
   output$fit_radar <- renderPlotly({
     recs <- recommendations() %>% slice_head(n = 5)
+    
+    if (nrow(recs) == 0) {
+      return(
+        plot_ly() %>%
+          layout(title = "No recommendations to display.")
+      )
+    }
     
     radar_df <- recs %>%
       select(
@@ -473,3 +531,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
