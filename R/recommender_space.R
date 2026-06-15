@@ -106,7 +106,7 @@ build_motorcycle_space <- function(moto_catalog) {
   label_motorcycle_clusters(embedded)
 }
 
-build_user_vector <- function(
+build_space_user_vector <- function(
     experience = "Beginner",
     rider_height = 68,
     use_case = "Commuting",
